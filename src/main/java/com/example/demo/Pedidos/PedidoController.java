@@ -31,6 +31,8 @@ import java.util.Optional;
 @Tag(name = "Pedidos", description = "Operaciones relacionadas con la gestion de pedidos")
 public class PedidoController {
 
+	
+	private String cid;
     @Autowired
     private PedidoService pedidosService;
 
@@ -47,8 +49,7 @@ public class PedidoController {
 
         String url = "http://localhost:3000/api/v1/pedidos";
         Map<String, Object> body = new HashMap<>();
-        body.put("cadena", "Pedido"+
-        nuevoPedido.getId().toString());
+        body.put("cadena", "Pedido" + nuevoPedido.getId().toString());
         body.put("datos", nuevoPedido);
 
         HttpHeaders headers = new HttpHeaders();
@@ -57,9 +58,21 @@ public class PedidoController {
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
         try {
-            ResponseEntity<String> response = restTemplate.postForEntity(url, requestEntity, String.class);
-            if (response.getStatusCode() == HttpStatus.OK) {
-                System.out.println("Pedido enviado correctamente a Node.js");
+            ResponseEntity<Map> response = restTemplate.exchange(url, HttpMethod.POST, requestEntity, Map.class);
+
+            if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                Map<String, Object> responseBody = response.getBody();
+                if (responseBody.containsKey("upload")) {
+                    Map<String, Object> uploadData = (Map<String, Object>) responseBody.get("upload");
+                    if (uploadData.containsKey("IpfsHash")) {
+                        cid = (String) uploadData.get("IpfsHash");
+                        System.out.println("CID recibido: " + cid);
+                    } else {
+                        System.err.println("La respuesta no contiene 'IpfsHash'");
+                    }
+                } else {
+                    System.err.println("La respuesta no contiene 'upload'");
+                }
             } else {
                 System.err.println("Error al enviar el pedido a Node.js: " + response.getStatusCode());
             }
@@ -69,11 +82,12 @@ public class PedidoController {
 
         return new ResponseEntity<>(nuevoPedido, HttpStatus.CREATED);
     }
+
     
-    @GetMapping("/recuperarMetadata")
-    public ResponseEntity<String> recuperarMetadata() {
-        // URL del endpoint de Node.js
-        String url = "http://localhost:3000/api/v1/pedidos";
+    @GetMapping("/recuperarMetadata/{cid}")
+    public ResponseEntity<String> recuperarMetadata(@PathVariable String cid) {
+        // URL del endpoint de Node.js con el CID como parámetro
+        String url = "http://localhost:3000/api/v1/pedidos/" + cid;
         
         try {
             // Realizar la petición GET
