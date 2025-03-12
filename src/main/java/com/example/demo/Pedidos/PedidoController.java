@@ -21,6 +21,10 @@ import jakarta.validation.Valid;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,8 +47,11 @@ public class PedidoController {
     private RestTemplate restTemplate; // Aquí usamos RestTemplate
 
     @Operation(summary = "Agregar un pedido", description = "Agrega un nuevo pedido al sistema")
-    @PostMapping
-    public ResponseEntity<Pedido> agregarPedido(@Valid @RequestBody Pedido pedido) {
+    @PostMapping("/{address}/{tokenId}/{metadataURL}")
+    public ResponseEntity<Pedido> agregarPedido(@Valid @RequestBody Pedido pedido,
+    		@Parameter(description = "Address del destinatario", required = true) @PathVariable String address,
+    		@Parameter(description = "ID del token", required = true) @PathVariable Long tokenId,
+    		@Parameter(description = "Url del Metadata del pedido", required = true) @PathVariable String metadataURL) {
         Pedido nuevoPedido = pedidosService.agregarPedido(pedido);
 
         String url = "http://localhost:3000/api/v1/pedidos";
@@ -79,10 +86,49 @@ public class PedidoController {
         } catch (Exception e) {
             System.err.println("Error en la comunicación con la API de Node.js: " + e.getMessage());
         }
-
+        
+        mintNFT(address, tokenId, nuevoPedido.getId(), metadataURL);
+        
         return new ResponseEntity<>(nuevoPedido, HttpStatus.CREATED);
     }
 
+     private void mintNFT(String address, Long tokenId, Long orderId, String metadataURL) {
+            try {
+                String apiUrl = "http://localhost:3001/mint";
+                URL url = new URL(apiUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+
+                String jsonInput = String.format(
+                        "{ \"to\":\"%s\", \"tokenId\":%d, \"orderId\":%d, \"metadataUrl\":\"%s\" }",
+                        address, tokenId, orderId, metadataURL
+                    );
+
+                try (OutputStream os = conn.getOutputStream()) {
+                    byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);
+                    os.write(input, 0, input.length);
+                }
+
+                int responseCode = conn.getResponseCode();
+                System.out.println("Response Code: " + responseCode);
+
+                // Leer la respuesta de la API
+                try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder response = new StringBuilder();
+                    String responseLine;
+                    while ((responseLine = br.readLine()) != null) {
+                        response.append(responseLine.trim());
+                    }
+                    System.out.println("Response: " + response.toString());
+                }
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     
     @GetMapping("/recuperarMetadata/{cid}")
     public ResponseEntity<String> recuperarMetadata(@PathVariable String cid) {

@@ -5,6 +5,13 @@ import com.example.demo.Pedidos.PedidoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.beans.Statement;
+import java.sql.Connection;
+import java.sql.Date;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,6 +22,10 @@ public class UserService {
 
     @Autowired
     private PedidoService pedidoService;
+    
+    private static final String URL = "jdbc:mysql://localhost:3306/autorizame";
+    private static final String USER = "root";
+    private static final String PASSWORD = "1234";
 
     private List<User> userList = new ArrayList<>();
     private Long nextId = 1L; // Para simular un ID autoincremental
@@ -37,24 +48,47 @@ public class UserService {
     
 
     public User createUser(User user) {
-        try {
+        String query = "INSERT INTO users (nombre, contrasena, email, address, admin, fecha_registro) VALUES (?, ?, ?, ?, ?, ?)";
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement stmt = conn.prepareStatement(query, PreparedStatement.RETURN_GENERATED_KEYS)) {
+
             if (!isValidPassword(user.getContrasena())) {
                 throw new IllegalArgumentException("La contraseña debe tener al menos 5 caracteres y contener al menos un número.");
             }
             if (!isEmailUnique(user.getEmail(), null)) {
                 throw new IllegalArgumentException("El correo electrónico ya está en uso.");
             }
+
             user.setId(nextId++);
             user.setFechaRegistro(LocalDate.now());
             userList.add(user);
+            stmt.setString(1, user.getNombre());
+            stmt.setString(2, user.getContrasena());
+            stmt.setString(3, user.getEmail());
+            stmt.setString(4, user.getAddress());
+            stmt.setBoolean(5, user.isAdmin());
+            stmt.setDate(6, Date.valueOf(LocalDate.now()));
+
+            int affectedRows = stmt.executeUpdate();
+            if (affectedRows == 0) {
+                throw new SQLException("Error al insertar el usuario, no se generó ninguna clave.");
+            }
+
+            try (ResultSet rs = stmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    user.setId(rs.getLong(1));
+                } else {
+                    throw new SQLException("Error al obtener la clave generada.");
+                }
+            }
+
             return user;
         } catch (IllegalArgumentException e) {
             throw new RuntimeException("Error al crear el usuario: " + e.getMessage(), e);
-        } catch (Exception e) {
+        } catch (SQLException e) {
             throw new RuntimeException("Ocurrió un error inesperado al crear el usuario.", e);
         }
     }
-
     
     
     
@@ -81,6 +115,7 @@ public class UserService {
             existingUser.setContrasena(userDetails.getContrasena());
             existingUser.setEmail(userDetails.getEmail());
             existingUser.setAddress(userDetails.getAddress());
+            existingUser.setAdmin(userDetails.isAdmin());
 
             if (userDetails.getAutorizados() != null) {
                 List<Autorizado> validAutorizados = new ArrayList<>();
@@ -100,6 +135,21 @@ public class UserService {
                 existingUser.setAutorizados(validAutorizados);
             }
 
+            // Actualizar usuario en la base de datos
+            String query = "UPDATE users SET nombre = ?, contrasena = ?, email = ?, address = ?, admin = ? WHERE id = ?";
+            try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+                 PreparedStatement stmt = conn.prepareStatement(query)) {
+                stmt.setString(1, existingUser.getNombre());
+                stmt.setString(2, existingUser.getContrasena());
+                stmt.setString(3, existingUser.getEmail());
+                stmt.setString(4, existingUser.getAddress());
+                stmt.setBoolean(5, existingUser.isAdmin());
+                stmt.setLong(6, id);
+                stmt.executeUpdate();
+            } catch (SQLException e) {
+                throw new RuntimeException("Error al actualizar el usuario en la base de datos.", e);
+            }
+
             return existingUser;
         } catch (RuntimeException e) {
             throw new RuntimeException("Error al actualizar el usuario: " + e.getMessage(), e);
@@ -107,6 +157,9 @@ public class UserService {
             throw new RuntimeException("Ocurrió un error inesperado al actualizar el usuario.", e);
         }
     }
+    
+    
+    
 
     public void deleteUser(Long id) {
         Optional<User> userOpt = getUserById(id);
@@ -127,12 +180,21 @@ public class UserService {
             pedidoService.eliminarPedido(pedido.getId());
         }
 
-        // Eliminar usuario de la lista
+        // Eliminar usuario de la base de datos
         userList.remove(user);
+        String query = "DELETE FROM users WHERE id = ?";
+        try (Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+             PreparedStatement stmt = conn.prepareStatement(query)) {
+            stmt.setLong(1, id);
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error al eliminar el usuario de la base de datos.", e);
+        }
 
         // Enviar correo de confirmación
         enviarCorreoConfirmacionEliminacion(user.getEmail(), user.getNombre());
     }
+    
     
     public Autorizado agregarAutorizado(Long userId, Autorizado autorizado) {
         User user = getUserById(userId).orElseThrow(() -> new RuntimeException("Usuario no encontrado"));

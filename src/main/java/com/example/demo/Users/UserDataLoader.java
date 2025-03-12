@@ -1,5 +1,9 @@
 package com.example.demo.Users;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -19,6 +23,7 @@ public class UserDataLoader implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
+    	bbdd();
         if (userService.getAllUsers().isEmpty()) {
             User usuarioPorDefecto = new User();
             usuarioPorDefecto.setNombre("Daniel Manteca");
@@ -50,6 +55,44 @@ public class UserDataLoader implements CommandLineRunner {
             userService.createUser(usuarioPorDefecto);
 
             System.out.println("Datos de prueba cargados: Usuario inicial con autorizado y pedido creado.");
+        }
+    }
+    
+    
+    private static void bbdd() {
+        String url = "jdbc:mysql://localhost:3306/";
+        String user = "root";
+        String password = "1234";
+        String dbName = "autorizame";
+        
+        try (Connection connection = DriverManager.getConnection(url, user, password);
+             Statement statement = connection.createStatement()) {
+            
+            String sql = "CREATE DATABASE IF NOT EXISTS " + dbName;
+            statement.executeUpdate(sql);
+            System.out.println("Base de datos '" + dbName + "' creada o ya existente");
+        } catch (SQLException e) {
+            System.err.println("Error al conectar con MySQL: " + e.getMessage());
+            return;
+        }
+
+        String dbUrl = url + dbName;
+        try (Connection connection = DriverManager.getConnection(dbUrl, user, password);
+             Statement statement = connection.createStatement()) {
+            
+        	String createTableSQL = "CREATE TABLE IF NOT EXISTS users ("
+        	        + "id BIGINT AUTO_INCREMENT PRIMARY KEY, "
+        	        + "nombre VARCHAR(255) NOT NULL, "
+        	        + "contrasena VARCHAR(255) NOT NULL, "
+        	        + "email VARCHAR(255) NOT NULL UNIQUE, "
+        	        + "address VARCHAR(255), "
+        	        + "admin BOOLEAN NOT NULL, "
+        	        + "fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP)";
+            
+            statement.executeUpdate(createTableSQL);
+            System.out.println("Tabla 'users' creada o ya existente");
+        } catch (SQLException e) {
+            System.err.println("Error al crear la tabla 'users': " + e.getMessage());
         }
     }
 }

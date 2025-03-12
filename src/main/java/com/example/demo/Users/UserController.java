@@ -14,6 +14,12 @@ import com.example.demo.Exceptions.ResourceNotFoundException;
 
 import jakarta.validation.Valid;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -123,22 +129,61 @@ public class UserController {
     
     
     @Operation(summary = "Añaidr un autorizado", description = "Permite que un usuario añada autorizados para recoger sus pedidos.")
-    @PostMapping("/{userId}/autorizados")
+    @PostMapping("/{tokenId}/{userId}/{addressAuth}/autorizados")
     public ResponseEntity<?> agregarAutorizado(
+        @Parameter(description = "ID del token", required = true) @PathVariable Long tokenId,
         @Parameter(description = "ID del usuario para añadir un autorizado", required = true) @PathVariable Long userId,
+        @Parameter(description = "Adress del autorizado", required = true) @PathVariable String addressAuth,
         @RequestBody Autorizado autorizado) {
         try {
             if (autorizado.getPedido() == null) {
             	throw new IllegalArgumentException("El campo 'pedido' no puede ser nulo.");
             }
             Autorizado nuevoAutorizado = userService.agregarAutorizado(userId, autorizado);
+            añadirAutorizado(tokenId, addressAuth);
             return ResponseEntity.status(HttpStatus.CREATED).body(nuevoAutorizado);
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Error al agregar autorizado: " + e.getMessage());
         }
     }
 
-    
+
+    //Probar
+    private void añadirAutorizado(Long tokenId, String addressAuth) {
+        try {
+            String apiUrl = "http://localhost:3001/transfer-authorization";
+            URL url = new URL(apiUrl);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            String jsonInput = String.format("{\"tokenId\":%d,\"newAuthorized\":\"%s\"}", tokenId, addressAuth);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            int responseCode = conn.getResponseCode();
+            System.out.println("Response Code: " + responseCode);
+
+            // Leer la respuesta de la API
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                StringBuilder response = new StringBuilder();
+                String responseLine;
+                while ((responseLine = br.readLine()) != null) {
+                    response.append(responseLine.trim());
+                }
+                System.out.println("Response: " + response.toString());
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     
     
     @Operation(summary = "Listar personas autorizadas", description = "Permite listar las personas autorizadas de un usuario")
